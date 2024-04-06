@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "JpgExifExtractor": {
+      "commandName": "Project",
+      "commandLineArgs": "\"000013310011.jpg\""
+    }
+  }
+}
