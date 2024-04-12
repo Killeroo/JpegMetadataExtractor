@@ -1,11 +1,227 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace JpgExifExtractor
 {
+    public enum ExifType : ushort
+    {
+        Byte = 1,
+        String = 2,
+        UShort = 3,
+        ULong = 4,
+        URational = 5,
+        SByte = 6,
+        Undefined = 7,
+        Short = 8,
+        Long = 9,
+        Rational = 10,
+        Float = 11,
+        Double = 12,
+    }
+
+    public struct ExifEntry
+    {
+        public readonly ushort Tag;
+        public readonly ExifType Type;
+        public readonly byte[] Value;
+
+        public ExifEntry(ushort inTag, ExifType inType, byte[] inValue)
+        {
+            Tag = inTag;
+            Type = inType;
+            Value = inValue;
+        }
+
+        // TODO: Add some simple caching
+        // TODO: Check specific size based on type?
+        // TODO: Comment that is could return an exception
+        public byte GetValueAsByte()
+        {
+            if (Type != ExifType.Byte || Value.Length == 0) 
+            {
+                return 0;
+            }
+            else
+            {
+                return Value[0];
+            }
+        }
+
+        public string GetValueAsString()
+        {
+            if (Type != ExifType.String || Value.Length == 0)
+            {
+                return string.Empty;
+            }
+            else
+            {
+                return Encoding.ASCII.GetString(Value);
+            }
+        }
+
+        public ushort GetValueAsUShort()
+        {
+            if (Type != ExifType.UShort || Value.Length == 0)
+            {
+                return 0;
+            }
+            else
+            {
+                return BitConverter.ToUInt16(Value, 0);
+            }
+        }
+
+        public ulong GetValueAsULong()
+        {
+            if (Type != ExifType.ULong || Value.Length == 0)
+            {
+                return 0;
+            }
+            else
+            {
+                return BitConverter.ToUInt64(Value, 0);
+            }
+        }
+
+        public URational GetValueAsURational()
+        {
+            if (Type != ExifType.URational || Value.Length == 0)
+            {
+                return URational.Empty;
+            }
+            else
+            {
+                return new URational(Value, 0);
+            }
+        }
+
+        public sbyte GetValueAsSByte()
+        {
+            if (Type != ExifType.SByte || Value.Length == 0)
+            {
+                return 0;
+            }
+            else
+            {
+                return (sbyte) Value[0];
+            }    
+        }
+
+        public short GetValueAsShort()
+        {
+            if (Type != ExifType.Short || Value.Length == 0)
+            {
+                return 0;
+            }
+            else
+            {
+                return BitConverter.ToInt16(Value);
+            }
+        }
+
+        public long GetValueAsLong()
+        {
+            if (Type != ExifType.Long || Value.Length == 0)
+            {
+                return 0;
+            }
+            else
+            {
+                return BitConverter.ToInt64(Value);
+            }
+        }
+
+        public Rational GetValueAsRational()
+        {
+            if (Type != ExifType.Rational || Value.Length == 0)
+            {
+                return Rational.Empty;
+            }
+            else
+            {
+                return new Rational(Value, 0);
+            }
+        }
+
+        public float GetValueAsFloat()
+        {
+            if (Type != ExifType.Float || Value.Length == 0)
+            {
+                return 0.0f;
+            }
+            else
+            {
+                return BitConverter.ToSingle(Value);
+            }
+        }
+
+        public double GetValueAsDouble()
+        {
+            if (Type != ExifType.Double || Value.Length == 0)
+            {
+                return 0.0f;
+            }
+            else
+            {
+                return BitConverter.ToDouble(Value);
+            }
+        }
+
+    }
+
+    public struct Rational
+    {
+        public static Rational Empty = new Rational(0, 0);
+
+        public readonly long Numerator;
+        public readonly long Denominator;
+
+        public Rational(byte[] bytes, int offset)
+        {
+            Numerator = BitConverter.ToInt64(bytes, offset);
+            Denominator = BitConverter.ToInt64(bytes, offset + 8);
+        }
+        public Rational(long _numerator, long _denominator)
+        {
+            Numerator = _numerator;
+            Denominator = _denominator;
+        }
+
+        public override string ToString() 
+        {
+            return string.Format("{0}//{1}", Numerator, Denominator);
+        }
+    }
+
+    public struct URational
+    {
+        public static URational Empty = new URational(0, 0);
+
+        public readonly ulong Numerator;
+        public readonly ulong Denominator;
+        
+        public URational(byte[] bytes, int offset)
+        {
+            Numerator = BitConverter.ToUInt64(bytes, offset);
+            Denominator = BitConverter.ToUInt64(bytes, offset + 8);
+        }
+        public URational(ulong _numerator, ulong _denominator)
+        {
+            Numerator = _numerator;
+            Denominator = _denominator;
+        }
+
+        public override string ToString()
+        {
+            return string.Format("{0}//{1}", Numerator, Denominator);
+        }
+    }
+
+
     public static class ExifExtractor
     {
         private static readonly byte[] kJpgStartOfImage = { 0xFF, 0xD8 };
@@ -18,13 +234,29 @@ namespace JpgExifExtractor
 
         private static ushort kTiffExifSubIFDTag = 0x8769;
 
+        // TODO: Not efficient lookups?
+        public static readonly Dictionary<ExifType, byte> ExifTypeSizeMap = new()
+        {
+            { ExifType.Byte, 1 },
+            { ExifType.String, 1 },
+            { ExifType.UShort, 2 },
+            { ExifType.ULong, 4 },
+            { ExifType.URational, 8 },
+            { ExifType.SByte, 1 },
+            { ExifType.Undefined, 1 },
+            { ExifType.Short, 2 },
+            { ExifType.Long, 4 },
+            { ExifType.Rational, 8 },
+            { ExifType.Float, 4 },
+            { ExifType.Double, 8 },
+        };
+
         private struct TiffEntry
         {
             public ushort Tag;
             public ushort Type;
             public uint Count;
             public uint ValueOffset;
-            //public long BaseOffset;
 
             public TiffEntry(BinaryReader reader)
             {
@@ -35,12 +267,14 @@ namespace JpgExifExtractor
             }
         }
 
-        public static bool GetTags(string filePath, out ExifEntry[] entries)
+        public static bool GetTags(string filePath, out List<ExifEntry> entries)
         {
+            entries = new List<ExifEntry>();
+
             // Is it a jpeg file that exits
             if (File.Exists(filePath) == false || Path.GetExtension(filePath).ToLower() != ".jpg")
             {
-                return;
+                return false;
             }
 
             // Open file stream
@@ -52,11 +286,23 @@ namespace JpgExifExtractor
             catch (Exception e)
             {
                 Console.WriteLine("Cannot open file. [{0}]", e.GetType().ToString());
-                return;
+                return false;
             }
 
             using (BinaryReader reader = new(stream))
             {
+                long exifOffset = FindExifDataInJpg(reader);
+                if (exifOffset < 0)
+                {
+                    return false;
+                }
+
+                List<TiffEntry> imageEntries = new();
+                List<TiffEntry> thumbnailEntries = new();
+                TryParseTiffStructure(reader, exifOffset, out imageEntries, out thumbnailEntries);
+
+                ResolveTiffEntries(reader, exifOffset, imageEntries);
+                ResolveTiffEntry();
 
             }
 
@@ -73,17 +319,26 @@ namespace JpgExifExtractor
 
         public static bool GetThumbnail(string filePath, out byte[] imageData)
         {
-
+            imageData = new byte[0];
+            return false;
         }
 
-        private static long ParseFile(BinaryReader reader, out List<TiffEntry> imageEntries, out List<TiffEntry> thumbnailEntries)
+        /// <summary>
+        /// Parse a JPG file and returns the offset of the Exif data inside the file. 
+        /// </summary>
+        /// <param name="reader">BinaryReader of opened jpg file</param>
+        /// <returns>offset of exif data within the jpg file</returns>
+        /// <remarks>
+        /// -1 is returned if an error occurs during parsing or if the exif data cannot be found.
+        /// </remarks>
+        private static long FindExifDataInJpg(BinaryReader reader)
         {
             // Verify jpeg file, should always start with StartOfImage segment
             byte[] segment = reader.ReadBytes(2);
             if (segment[0] != kJpgStartOfImage[0] || segment[1] != kJpgStartOfImage[1]) // TODO: Ew
             {
                 Console.WriteLine("[JPG] Encountered incorrect starting segment");
-                return;
+                return -1;
             }
 
             // Loop through segments until we find Exif file in segment APP1 
@@ -95,7 +350,7 @@ namespace JpgExifExtractor
                 if (marker != 0xFF)
                 {
                     Console.WriteLine("[JPG] Found incorrect starting marker @ 0x{0}", (reader.BaseStream.Position - 1).ToString("X6"));
-                    return;
+                    return -1;
                 }
                 byte type = reader.ReadByte();
                 long pos = reader.BaseStream.Position;
@@ -142,15 +397,24 @@ namespace JpgExifExtractor
             if (foundExifSegment == false || exifSegmentSize == 0)
             {
                 Console.WriteLine("Could not find Exif segment");
-                return;
+                return -1;
             }
 
+            return reader.BaseStream.Position;
+        }
+
+        private static bool TryParseTiffStructure(BinaryReader reader, long offset, out List<TiffEntry> imageEntries, out List<TiffEntry> thumbnailEntries)
+        {
+            imageEntries = new List<TiffEntry>();
+            thumbnailEntries = new List<TiffEntry>();
+
             // Exif header
+            reader.BaseStream.Seek(offset, SeekOrigin.Begin);
             string exifMarker = Encoding.ASCII.GetString(reader.ReadBytes(4));
             if (exifMarker != "Exif" || reader.ReadInt16() != 0)
             {
                 Console.WriteLine("Could not parse Exif header");
-                return;
+                return false;
             }
 
             // Tiff header
@@ -159,14 +423,14 @@ namespace JpgExifExtractor
             if (byteAlignment != kTiffIntelAligned && byteAlignment != kTiffMotorolaAligned)
             {
                 Console.WriteLine("Could not recognise Tiff byte alignment");
-                return;
+                return false;
             }
             ushort byteAlignmentTest = reader.ReadUInt16();
             if ((byteAlignment == kTiffIntelAligned && byteAlignmentTest != 0x2A00)
                 && (byteAlignment == kTiffMotorolaAligned && byteAlignmentTest != 0x002A))
             {
                 Console.WriteLine("Tiff byte alignment test failed");
-                return;
+                return false;
             }
             uint firstIfdOffset = reader.ReadUInt32();
 
@@ -197,30 +461,63 @@ namespace JpgExifExtractor
 
             // Exif only uses 2 image directories (and one exif sub directory) so we can unroll any loop that we would
             // normally need for parsing tiffs in this case
-            List<TiffEntry> imageEntries = new();
-            List<TiffEntry> thumbnailEntries = new();
             long thumbnailIfdOffset = ParseImageFileDirectory(firstIfdOffset, ref imageEntries);
             ParseImageFileDirectory(thumbnailIfdOffset, ref thumbnailEntries);
 
-            // Resolve exif values
-            foreach (var entry in imageEntries)
+            return true;
+        }
+
+        private static ExifEntry ResolveTiffEntry(BinaryReader reader, in TiffEntry entry)
+        {
+            return new ExifEntry();
+        }
+
+        private static List<ExifEntry> ResolveTiffEntries(BinaryReader reader, long tiffOffset, List<TiffEntry> tiffEntries)
+        {
+            List<ExifEntry> exifEntries = new(); // Use out keyword to avoid initalizing again?
+
+            foreach (var tiffEntry in tiffEntries)
             {
+                reader.BaseStream.Seek(tiffOffset + tiffEntry.ValueOffset, SeekOrigin.Begin);
+
+                ExifEntry newEntry = new (tiffEntry.Tag, (ExifType)tiffEntry.Type, reader.ReadBytes((int)tiffEntry.Count * ExifTypeSizeMap[(ExifType)tiffEntry.Type]));
+
                 Console.WriteLine("Tag=0x{0} Type={1} Count={2} ValueOffset=0x{3}",
-                    entry.Tag.ToString("X4"),
-                    entry.Type,
-                    entry.Count,
-                    entry.ValueOffset.ToString("X8"));
+                    tiffEntry.Tag.ToString("X4"),
+                    tiffEntry.Type,
+                    tiffEntry.Count,
+                    tiffEntry.ValueOffset.ToString("X8"));
             }
+
+            return exifEntries;
         }
 
-        ExifEntry ResolveTiffEntry(BinaryReader reader, in TiffEntry entry)
+        private static byte PeakByte(this BinaryReader reader)
         {
+            if (reader.BaseStream.CanSeek == false)
+            {
+                return 0; // TODO: Ooooh noooooooo
+            }
 
+            long origin = reader.BaseStream.Position;
+            byte next = reader.ReadByte();
+            reader.BaseStream.Position = origin;
+
+            return next;
         }
 
-        List<ExifEntry> ResolveTiffEntries(BinaryReader reader, List<TiffEntry> entries)
+        private static byte[] PeakBytes(this BinaryReader reader, int count)
         {
+            if (reader.BaseStream.CanSeek == false)
+            {
+                return new byte[0];
+            }
 
+            long origin = reader.BaseStream.Position;
+            byte[] next = reader.ReadBytes(count);
+            reader.BaseStream.Position = origin;
+
+            return next;
         }
     }
 }
