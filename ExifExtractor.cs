@@ -1,4 +1,34 @@
-﻿using System;
+﻿/**********************************************************************************
+ ***                           JpegExifExtractor                                ***    
+ ********************************************************************************** 
+ *                                                                                *  
+ * Lightweight (?) library that can extract Exif image tags from Jpeg files.      *  
+ *                                                                                *
+ **********************************************************************************
+ * MIT License                                                                    *
+ *                                                                                *
+ * Copyright (c) 2024 Matthew Carney                                              *
+ *                                                                                *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy   *
+ * of this software and associated documentation files (the "Software"), to deal  *
+ * in the Software without restriction, including without limitation the rights   *
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell      *
+ * copies of the Software, and to permit persons to whom the Software is          *
+ * furnished to do so, subject to the following conditions:                       *
+ *                                                                                *
+ * The above copyright notice and this permission notice shall be included in all *
+ * copies or substantial portions of the Software.                                *
+ *                                                                                *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR     *
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,       *
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE    *
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER         *
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,  *
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE  *
+ * SOFTWARE.                                                                      *
+ *********************************************************************************/
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -414,45 +444,8 @@ namespace JpgTagExtractor
         private static ushort kTiffMotorolaAligned = 0x4D4D;
         private static ushort kTiffExifSubIFDTag = 0x8769;
 
-        /// <summary>
-        /// A very simple fixed size cache of parsed image exif tags. 
-        /// 
-        /// Limited to store the last X number of retrieved values, where the oldest entry is removed first.
-        /// </summary>
-        private static class ResolvedExifTagsCache
-        {
-            private const int kMaxCacheSize = 5;
+        private static long kInvalidOffset = -1;
 
-            // This could actually be done using an OrderedDictionary but hey
-            private static Queue<string> _keys = new();
-            private static Dictionary<string, Dictionary<ushort, ExifEntry>> _cache = new();
-
-            public static bool ContainsKey(string key)
-            {
-                return _cache.ContainsKey(key);
-            }
-
-            public static Dictionary<ushort, ExifEntry> Retrieve(string key)
-            {
-                if (_cache.ContainsKey(key))
-                {
-                    return _cache[key];
-                }
-
-                return new Dictionary<ushort, ExifEntry>();
-            }
-
-            public static void Add(string key, Dictionary<ushort, ExifEntry> ExifTags)
-            {
-                if (_cache.Count == kMaxCacheSize)
-                {
-                    _cache.Remove(_keys.Dequeue());
-                }
-
-                _cache.Add(key, ExifTags);
-                _keys.Enqueue(key);
-            }
-        }
 
         /// <summary>
         /// Simple representation of a Tiff entry. Exif data is stored using tiff and so these entries are used to store references to Exif data.
@@ -478,8 +471,109 @@ namespace JpgTagExtractor
             }
         }
 
+
         /// <summary>
-        /// Tries to retrieve all image related Exif tags in a file.
+        /// A very simple fixed size cache of parsed image exif tags. 
+        /// 
+        /// Limited to store the last X file's worth of retrieved values, where the oldest entry is removed first.
+        /// </summary>
+        private static class ResolvedExifTagsCache
+        {
+            // This could actually be done using an OrderedDictionary but hey
+            private static Queue<string> _keys = new();
+            private static Dictionary<string, Dictionary<ushort, ExifEntry>> _cache = new();
+
+            private static int _maxCacheSize = 1;
+
+            public static int Count => _cache.Count;
+
+            public static void Clear()
+            {
+                _keys.Clear();
+                _cache.Clear();
+            }
+
+            public static int Capacity 
+            { 
+                get => _maxCacheSize; 
+                set
+                {
+                    _maxCacheSize = value;
+
+                    if (_maxCacheSize == 0)
+                    {
+                        Clear();
+                    }
+                    else if (_maxCacheSize < _cache.Count)
+                    {
+                        for (int i = _cache.Count - 1; i >= _maxCacheSize; i--)
+                        {
+                            _cache.Remove(_keys.Dequeue());
+                        }
+                    }
+                }
+            }
+
+            public static bool ContainsKey(string key)
+            {
+                return _cache.ContainsKey(key);
+            }
+
+            public static Dictionary<ushort, ExifEntry> Retrieve(string key)
+            {
+                if (_cache.ContainsKey(key))
+                {
+                    return _cache[key];
+                }
+
+                return new Dictionary<ushort, ExifEntry>();
+            }
+
+            public static void Add(string key, Dictionary<ushort, ExifEntry> ExifTags)
+            {
+                if (_cache.Count == _maxCacheSize)
+                {
+                    _cache.Remove(_keys.Dequeue());
+                }
+
+                _cache.Add(key, ExifTags);
+                _keys.Enqueue(key);
+            }
+        }
+
+
+        /* Cache controls */
+
+        /// <summary>
+        /// Wether of not to use the extractor's internal cache of exif tags. This cache stores sets of Exif tags that have been successfully parsed from files.
+        /// </summary>
+        /// <seealso cref="SetCacheSize(int)"/>
+        /// <seealso cref="ClearCache"/>
+        public static bool UseInternalCache = false;
+
+        /// <summary>
+        /// Clears the contents of the extractor's internal exif tag cache.
+        /// </summary>
+        /// <seealso cref="UseInternalCache"/>
+        /// <seealso cref="SetCacheSize(int)"/>
+        public static void ClearCache() => ResolvedExifTagsCache.Clear();
+
+        /// <summary>
+        /// Sets the extractor's cache size. The cache stores sets of exif tags for all the files that it has successfully parsed. 
+        /// Setting the size controls how many files worth of exif tags the cache will hold.
+        /// 
+        /// For example, setting the cache size to one will store a maximum of 1 files worth of exif image tags.
+        /// </summary>
+        /// <param name="size">How many sets of Exif image tags to cache (one set per sucessfully parsed file)</param>
+        /// <seealso cref="UseInternalCache"/>
+        /// <seealso cref="ClearCache"/>
+        public static int CacheSize { get => ResolvedExifTagsCache.Capacity; set => ResolvedExifTagsCache.Capacity = value; }
+
+
+        /* Tag retrieval methods */
+
+        /// <summary>
+        /// Tries to retrieve all image related Exif tags in a Jpg file.
         /// </summary>
         /// <param name="filePath">The Jpg file path to extract the tags from</param>
         /// <param name="entries">The structure used to store the found tags</param>
@@ -487,10 +581,14 @@ namespace JpgTagExtractor
         /// <exception cref="ObjectDisposedException">Thrown if an object used during parsing is null. (whoops)</exception>
         /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
         /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
+        /// <remarks>
+        /// The Exif entries for a file can be cached once the file is parsed, this is done to make retrieving entries quick. You can set the cache size, reset it's contents or disable it completely 
+        /// via CacheSize, ResetCache and UseInternalCache respectively.
+        /// </remarks>
         public static bool TryGetTags(string filePath, out Dictionary<ushort, ExifEntry> entries)
         {
             // Check cache first
-            if (ResolvedExifTagsCache.ContainsKey(filePath))
+            if (UseInternalCache && CacheSize != 0 && ResolvedExifTagsCache.ContainsKey(filePath))
             {
                 entries = ResolvedExifTagsCache.Retrieve(filePath);
                 return true;
@@ -508,7 +606,7 @@ namespace JpgTagExtractor
             { 
                 // First find the Exif segment in the Jpg
                 long exifOffset = FindExifDataInJpg(reader);
-                if (exifOffset < 0)
+                if (exifOffset == kInvalidOffset)
                 {
                     return false;
                 }
@@ -524,28 +622,30 @@ namespace JpgTagExtractor
                 // Finally resolve the Tiff entries to give us our actual Exif tags
                 entries = ResolveTiffEntries(reader, exifOffset, imageEntries);
 
-                // Cache for later
-                ResolvedExifTagsCache.Add(filePath, entries);
+                if (UseInternalCache && CacheSize != 0)
+                {
+                    // Cache for later
+                    ResolvedExifTagsCache.Add(filePath, entries);
+                }
 
                 return true;
             }
-
-            return false;
         }
 
         /// <summary>
-        /// Try and 
+        /// Tries to retrieve a specific Exif image tag in a Jpg file.
         /// </summary>
-        /// <param name="filePath"></param>
-        /// <param name="tag"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// When wanting to extract multiple tags it is quicker to run TryGetTags instead
-        /// </remarks>
+        /// <param name="filePath">The path to the file to extract the tag from</param>
+        /// <param name="tag">The tag type to look for</param>
+        /// <param name="value">The found exif entry</param>
+        /// <returns>If the entry with the specific type was found in the file</returns>
         /// <exception cref="ObjectDisposedException">Thrown if an object used during parsing is null. (whoops)</exception>
         /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
         /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
+        /// <remarks>
+        /// The Exif entries for a file can be cached once the file is parsed, this is done to make retrieving entries quick. You can set the cache size, reset it's contents or disable it completely 
+        /// via CacheSize, ResetCache and UseInternalCache respectively.
+        /// </remarks>
         public static bool TryGetTag(string filePath, ushort tag, out ExifEntry value)
         {
             value = new ExifEntry();
@@ -560,7 +660,16 @@ namespace JpgTagExtractor
             return true;
         }
 
-
+        /// <summary>
+        /// Extracts any Exif image tags in a Jpg file and returns them as a dictionary
+        /// </summary>
+        /// <exception cref="ObjectDisposedException">Thrown if an object used during parsing is null. (whoops)</exception>
+        /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
+        /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
+        /// <remarks>
+        /// The Exif entries for a file can be cached once the file is parsed, this is done to make retrieving entries quick. You can set the cache size, reset it's contents or disable it completely 
+        /// via CacheSize, ResetCache and UseInternalCache respectively.
+        /// </remarks>
         public static Dictionary<ushort, ExifEntry> GetTags(string filePath)
         {
             Dictionary<ushort, ExifEntry> entries = new();
@@ -568,6 +677,18 @@ namespace JpgTagExtractor
             return entries;
         }
 
+        /// <summary>
+        /// Extracts a specific Exif image tag from a Jpg file
+        /// </summary>
+        /// <param name="filePath">The path to the file to extract the tag from</param>
+        /// <param name="tag">The tag type to look for</param>
+        /// <exception cref="ObjectDisposedException">Thrown if an object used during parsing is null. (whoops)</exception>
+        /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
+        /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
+        /// <remarks>
+        /// The Exif entries for a file can be cached once the file is parsed, this is done to make retrieving entries quick. You can set the cache size, reset it's contents or disable it completely 
+        /// via CacheSize, ResetCache and UseInternalCache respectively.
+        /// </remarks>
         public static ExifEntry GetTag(string filePath, ushort tag)
         {
             ExifEntry exif = new();
@@ -576,11 +697,17 @@ namespace JpgTagExtractor
         }
 
         // TODO
-        public static bool TryGetThumbnail(string filePath, out byte[] imageData)
+        private static bool TryGetThumbnail(string filePath, out byte[] imageData)
         {
             throw new NotSupportedException();
         }
 
+
+        /* Internal parsing code */
+
+        /// <summary>
+        /// Basic method that has common code for verifying and opening a file
+        /// </summary>
         private static BinaryReader? OpenFile(string filePath)
         {
             // Is it a jpeg file that exits
@@ -616,7 +743,7 @@ namespace JpgTagExtractor
         {
             if (reader == null)
             {
-                return -1;
+                return kInvalidOffset;
             }
 
             // Verify jpeg file, should always start with StartOfImage segment
@@ -624,7 +751,7 @@ namespace JpgTagExtractor
             if (segment[0] != kJpgStartOfImage[0] || segment[1] != kJpgStartOfImage[1]) // TODO: Ew
             {
                 Console.WriteLine("[JPG] Encountered incorrect starting segment");
-                return -1;
+                return kInvalidOffset;
             }
 
             // Loop through segments until we find Exif file in segment APP1 
@@ -636,7 +763,7 @@ namespace JpgTagExtractor
                 if (marker != 0xFF)
                 {
                     Console.WriteLine("[JPG] Found incorrect starting marker @ 0x{0}", (reader.BaseStream.Position - 1).ToString("X6"));
-                    return -1;
+                    return kInvalidOffset;
                 }
                 byte type = reader.ReadByte();
                 long pos = reader.BaseStream.Position;
@@ -683,7 +810,7 @@ namespace JpgTagExtractor
             if (foundExifSegment == false || exifSegmentSize == 0)
             {
                 Console.WriteLine("Could not find Exif segment");
-                return -1;
+                return kInvalidOffset;
             }
 
             return reader.BaseStream.Position;
@@ -767,27 +894,32 @@ namespace JpgTagExtractor
             return true;
         }
 
-        private static ExifEntry ResolveTiffEntry(BinaryReader reader, long tiffOffset, in TiffEntry entry)
+        /// <summary>
+        /// Retrieves the data for a single tiff entry from within a file
+        /// </summary>
+        private static ExifEntry? ResolveTiffEntry(BinaryReader reader, long tiffOffset, in TiffEntry entry)
         {
             if (reader == null)
             {
-                return new ExifEntry();
+                return null;
             }
 
             reader.BaseStream.Seek(tiffOffset + entry.ValueOffset, SeekOrigin.Begin);
             return new ExifEntry(entry.Tag, (ExifType)entry.Type, reader.ReadBytes((int)entry.Count * ExifEntry.TypeSizeMap[(ExifType)entry.Type]));
         }
 
-        private static Dictionary<ushort, ExifEntry> ResolveTiffEntries(BinaryReader reader, long tiffOffset, List<TiffEntry> tiffEntries)
+        /// <summary>
+        /// Retrieves the data for multiple tiff entries from within a file, at a given offset.
+        /// </summary>
+        private static Dictionary<ushort, ExifEntry>? ResolveTiffEntries(BinaryReader reader, long tiffOffset, List<TiffEntry> tiffEntries)
         {
-            Dictionary<ushort, ExifEntry> exifEntries = new();
-
             if (reader == null)
             {
                 return null;
             }
 
-             // TODO: Use out keyword to avoid initalizing again?
+            // TODO: Use out keyword to avoid initalizing again?
+            Dictionary<ushort, ExifEntry> exifEntries = new();
 
             foreach (var tiffEntry in tiffEntries)
             {
