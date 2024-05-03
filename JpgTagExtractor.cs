@@ -1,5 +1,5 @@
 ﻿/**********************************************************************************
- ***                           JpegExifExtractor                                ***    
+ ***                            JpegTagExtractor                                ***    
  ********************************************************************************** 
  *                                                                                *  
  * Lightweight (?) library that can extract Exif image tags from Jpeg files.      *  
@@ -433,7 +433,7 @@ namespace JpgTagExtractor
     /// <summary>
     /// Class that can extract Exif Version 2.0 tags from Jpg files
     /// </summary>
-    public static class ExifExtractor
+    public static class JpgTagExtractor
     {
         // Some data constants that we will be looking out for as we parse Jpg and Tiff data
         private static readonly byte[] kJpgStartOfImage = { 0xFF, 0xD8 };
@@ -621,6 +621,10 @@ namespace JpgTagExtractor
 
                 // Finally resolve the Tiff entries to give us our actual Exif tags
                 entries = ResolveTiffEntries(reader, exifOffset, imageEntries);
+                if (entries == null)
+                {
+                    return false;
+                }
 
                 if (UseInternalCache && CacheSize != 0)
                 {
