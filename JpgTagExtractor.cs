@@ -32,6 +32,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.IO;
 
 namespace JpgTagExtractor
 {
@@ -153,7 +154,7 @@ namespace JpgTagExtractor
         /// <summary>
         /// Simple map that contains the byte length of each different Exif data types.
         /// </summary>
-        public static readonly Dictionary<ExifType, byte> TypeSizeMap = new()
+        public static readonly Dictionary<ExifType, byte> TypeSizeMap = new Dictionary<ExifType, byte>()
         {
             { ExifType.Byte, 1 },
             { ExifType.String, 1 },
@@ -296,7 +297,7 @@ namespace JpgTagExtractor
             }
             else
             {
-                return BitConverter.ToInt16(Value);
+                return BitConverter.ToInt16(Value, 0);
             }
         }
 
@@ -313,7 +314,7 @@ namespace JpgTagExtractor
             }
             else
             {
-                return BitConverter.ToInt64(Value);
+                return BitConverter.ToInt64(Value, 0);
             }
         }
 
@@ -347,7 +348,7 @@ namespace JpgTagExtractor
             }
             else
             {
-                return BitConverter.ToSingle(Value);
+                return BitConverter.ToSingle(Value, 0);
             }
         }
 
@@ -364,7 +365,7 @@ namespace JpgTagExtractor
             }
             else
             {
-                return BitConverter.ToDouble(Value);
+                return BitConverter.ToDouble(Value, 0);
             }
         }
 
@@ -452,15 +453,20 @@ namespace JpgTagExtractor
         /// </summary>
         private struct TiffEntry
         {
-            public ushort Tag = 0;
-            public ushort Type = 0;
-            public uint Count = 0;
-            public uint ValueOffset = 0;
+            public ushort Tag;
+            public ushort Type;
+            public uint Count;
+            public uint ValueOffset;
 
-            public TiffEntry(BinaryReader? reader)
+            public TiffEntry(BinaryReader reader)
             {
                 if (reader == null)
                 {
+                    Tag = 0;
+                    Type = 0;
+                    Count = 0;
+                    ValueOffset = 0;
+
                     return;
                 }
 
@@ -480,8 +486,8 @@ namespace JpgTagExtractor
         private static class ResolvedExifTagsCache
         {
             // This could actually be done using an OrderedDictionary but hey
-            private static Queue<string> _keys = new();
-            private static Dictionary<string, Dictionary<ushort, ExifEntry>> _cache = new();
+            private static Queue<string> _keys = new Queue<string>();
+            private static Dictionary<string, Dictionary<ushort, ExifEntry>> _cache = new Dictionary<string, Dictionary<ushort, ExifEntry>>();
 
             private static int _maxCacheSize = 1;
 
@@ -596,7 +602,7 @@ namespace JpgTagExtractor
 
             entries = new Dictionary<ushort, ExifEntry>();
 
-            BinaryReader? reader = OpenFile(filePath);
+            BinaryReader reader = OpenFile(filePath);
             if (reader == null)
             {
                 return false;
@@ -612,8 +618,8 @@ namespace JpgTagExtractor
                 }
 
                 // Next parse the tiff structure that houses the Exif data
-                List<TiffEntry> imageEntries = new();
-                List<TiffEntry> thumbnailEntries = new();
+                List<TiffEntry> imageEntries = new List<TiffEntry>();
+                List<TiffEntry> thumbnailEntries = new List<TiffEntry>();
                 if (TryParseTiffStructure(reader, exifOffset, out imageEntries, out thumbnailEntries) == false)
                 {
                     return false;
@@ -676,7 +682,7 @@ namespace JpgTagExtractor
         /// </remarks>
         public static Dictionary<ushort, ExifEntry> GetTags(string filePath)
         {
-            Dictionary<ushort, ExifEntry> entries = new();
+            Dictionary<ushort, ExifEntry> entries = new Dictionary<ushort, ExifEntry>();
             TryGetTags(filePath, out entries);
             return entries;
         }
@@ -695,7 +701,7 @@ namespace JpgTagExtractor
         /// </remarks>
         public static ExifEntry GetTag(string filePath, ushort tag)
         {
-            ExifEntry exif = new();
+            ExifEntry exif = new ExifEntry();
             TryGetTag(filePath, tag, out exif);
             return exif;
         }
@@ -712,7 +718,7 @@ namespace JpgTagExtractor
         /// <summary>
         /// Basic method that has common code for verifying and opening a file
         /// </summary>
-        private static BinaryReader? OpenFile(string filePath)
+        private static BinaryReader OpenFile(string filePath)
         {
             // Is it a jpeg file that exits
             if (File.Exists(filePath) == false || Path.GetExtension(filePath).ToLower() != ".jpg")
@@ -743,7 +749,7 @@ namespace JpgTagExtractor
         /// <remarks>
         /// -1 is returned if an error occurs during parsing or if the exif data cannot be found.
         /// </remarks>
-        private static long FindExifDataInJpg(BinaryReader? reader)
+        private static long FindExifDataInJpg(BinaryReader reader)
         {
             if (reader == null)
             {
@@ -780,7 +786,7 @@ namespace JpgTagExtractor
 
                 if (marker == kJpgExifAppData[0] && type == kJpgExifAppData[1])
                 {
-                    exifSegmentSize = BitConverter.ToUInt16(reader.ReadBytes(2).Reverse().ToArray());
+                    exifSegmentSize = BitConverter.ToUInt16(reader.ReadBytes(2).Reverse().ToArray(), 0);
                     foundExifSegment = true;
                 }
                 if (marker == kJpgEndOfImage[0] && type == kJpgEndOfImage[1])
@@ -803,7 +809,7 @@ namespace JpgTagExtractor
                 else if (!foundExifSegment)
                 {
                     // Treat segment as if it was a normal variable length segment and skip over data
-                    ushort size = BitConverter.ToUInt16(reader.ReadBytes(2).Reverse().ToArray());
+                    ushort size = BitConverter.ToUInt16(reader.ReadBytes(2).Reverse().ToArray(), 0);
                     reader.BaseStream.Seek(pos + size, SeekOrigin.Begin);
                 }
 
@@ -828,7 +834,7 @@ namespace JpgTagExtractor
         /// <param name="imageEntries">Entries related to the file's main image</param>
         /// <param name="thumbnailEntries">Entries related to the file's thumbail image</param>
         /// <returns></returns>
-        private static bool TryParseTiffStructure(BinaryReader? reader, long offset, out List<TiffEntry> imageEntries, out List<TiffEntry> thumbnailEntries)
+        private static bool TryParseTiffStructure(BinaryReader reader, long offset, out List<TiffEntry> imageEntries, out List<TiffEntry> thumbnailEntries)
         {
             imageEntries = new List<TiffEntry>();
             thumbnailEntries = new List<TiffEntry>();
@@ -866,11 +872,11 @@ namespace JpgTagExtractor
             uint firstIfdOffset = reader.ReadUInt32();
 
             // Parse tiff structure
-            uint ParseImageFileDirectory(long offset, ref List<TiffEntry> outEntries)
+            uint ParseImageFileDirectory(long ifdOffset, ref List<TiffEntry> outEntries)
             {
-                reader.BaseStream.Seek(tiffPosition + offset, SeekOrigin.Begin);
+                reader.BaseStream.Seek(tiffPosition + ifdOffset, SeekOrigin.Begin);
                 ushort entries = reader.ReadUInt16();
-                //Console.WriteLine("IFD: loc={1} count={0}", entries, offset.ToString("x8"));
+                //Console.WriteLine("IFD: loc={1} count={0}", entries, ifdOffset.ToString("x8"));
 
                 for (int i = 0; i < entries; i++)
                 {
@@ -878,10 +884,10 @@ namespace JpgTagExtractor
 
                     // Check if we found the Exif SubIFD, that contains those good good tags
                     // so recurse back into it to parse it's contents
-                    if (outEntries[^1].Tag == kTiffExifSubIFDTag)
+                    if (outEntries[outEntries.Count - 1].Tag == kTiffExifSubIFDTag)
                     {
                         long subTagPosition = reader.BaseStream.Position;
-                        ParseImageFileDirectory(outEntries[^1].ValueOffset, ref outEntries);
+                        ParseImageFileDirectory(outEntries[outEntries.Count - 1].ValueOffset, ref outEntries);
                         reader.BaseStream.Seek(subTagPosition, SeekOrigin.Begin);
                     }
                 }
@@ -915,7 +921,7 @@ namespace JpgTagExtractor
         /// <summary>
         /// Retrieves the data for multiple tiff entries from within a file, at a given offset.
         /// </summary>
-        private static Dictionary<ushort, ExifEntry>? ResolveTiffEntries(BinaryReader reader, long tiffOffset, List<TiffEntry> tiffEntries)
+        private static Dictionary<ushort, ExifEntry> ResolveTiffEntries(BinaryReader reader, long tiffOffset, List<TiffEntry> tiffEntries)
         {
             if (reader == null)
             {
@@ -923,12 +929,12 @@ namespace JpgTagExtractor
             }
 
             // TODO: Use out keyword to avoid initalizing again?
-            Dictionary<ushort, ExifEntry> exifEntries = new();
+            Dictionary<ushort, ExifEntry> exifEntries = new Dictionary<ushort, ExifEntry>();
 
             foreach (var tiffEntry in tiffEntries)
             {
                 reader.BaseStream.Seek(tiffOffset + tiffEntry.ValueOffset, SeekOrigin.Begin);
-                exifEntries.Add(tiffEntry.Tag, new(tiffEntry.Tag, (ExifType)tiffEntry.Type, reader.ReadBytes((int)tiffEntry.Count * ExifEntry.TypeSizeMap[(ExifType)tiffEntry.Type])));
+                exifEntries.Add(tiffEntry.Tag, new ExifEntry(tiffEntry.Tag, (ExifType)tiffEntry.Type, reader.ReadBytes((int)tiffEntry.Count * ExifEntry.TypeSizeMap[(ExifType)tiffEntry.Type])));
 
                 Console.WriteLine("Tag=0x{0} Type={1} Count={2} ValueOffset=0x{3}",
                     tiffEntry.Tag.ToString("X4"),
