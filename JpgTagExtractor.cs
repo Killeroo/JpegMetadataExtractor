@@ -40,6 +40,8 @@ using System.Runtime.CompilerServices;
 // TODO: Finish GetMetadata
 // TODO: Fix parsing error in ireland photos..
 // TODO: Add author
+// TODO: Rename to JpgMetadataExtractor
+// TODO: Finish comments
 
 namespace JpgTagExtractor
 {
