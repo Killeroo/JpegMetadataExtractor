@@ -1,5 +1,5 @@
 ﻿/**********************************************************************************
- ***                          JpegMetadatExtractor                              ***
+ ***                         JpegMetadataExtractor                              ***
  **********************************************************************************
  *                                                                                *
  * Lightweight (?) library that can extract various types of metadata from        *
@@ -34,16 +34,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.IO;
-using System.Runtime.CompilerServices;
 
-// TODO: Apex conversion
-// TODO: Finish GetMetadata
-// TODO: Fix parsing error in ireland photos..
-// TODO: Add author
-// TODO: Rename to JpgMetadataExtractor
-// TODO: Finish comments
-
-namespace JpgTagExtractor
+namespace JpgMetadataExtractor
 {
     /// <summary>
     /// Simplified data about an image. Constructed using a mixture of different metadata sources within the file.
@@ -55,6 +47,8 @@ namespace JpgTagExtractor
     {
         // General
         public string Name;
+        public string Artist;
+        public string Copyright;
         public int Width;
         public int Height;
         public byte BitsPerSample;
@@ -71,8 +65,8 @@ namespace JpgTagExtractor
         public string CameraModel = string.Empty;
         public ulong ISO;
         public URational ExposureTime;
-        public int Aperture;
-        public int MaxAperture;
+        public double Aperture;
+        public double MaxAperture;
         public int FocalLength;
         public ExposureProgram ExposureProgram;
         public string Lens = string.Empty;
@@ -127,15 +121,55 @@ namespace JpgTagExtractor
     /// </summary>
     public class RawImageMetadata
     {
+        /// <summary>
+        /// All parsed exif values for the main jpeg image found in the file.
+        /// </summary>
         public Dictionary<ushort, ExifEntry> ExifImageEntries = new Dictionary<ushort, ExifEntry>();
+        /// <summary>
+        /// All parsed exif values for the embedded jpeg thumbnail
+        /// </summary>
         public Dictionary<ushort, ExifEntry> ExifThumbnailEntries = new Dictionary<ushort, ExifEntry>();
 
+        /// <summary>
+        /// The raw AdobeXMP data found in the Jpeg file
+        /// </summary>
         public string AdobeXmpData = string.Empty;
-        public StartOfFrameData FrameData; 
+
+        /// <summary>
+        /// A subset of the data found in the Jpeg's StartOfFrame segmenet
+        /// </summary>
+        public StartOfFrameData FrameData;
+
+        /// <summary>
+        /// The Jfif data found in the Jpeg
+        /// </summary>
         public byte[] JfifData = new byte[0];
+
+        /// <summary>
+        /// The thumbnail image data found in the Jpeg
+        /// </summary>
+        /// <remarks>
+        /// Not currently populated
+        /// </remarks>
         public byte[] ThumbnailData = new byte[0];
     }
 
+    /// <summary>
+    /// Utility class for different converting Apex (Additive System of Photographic Exposure) values to human readable numbers
+    /// </summary>
+    public static class ApexConverter
+    {
+        /// <summary>
+        /// Converts the imputted Apex value to a readable double
+        /// </summary>
+        /// <param name="apexValue"></param>
+        /// <returns></returns>
+        public static double ApexToDouble(double apexValue) { return Math.Exp(apexValue) * Math.Log(2.0); }
+    }
+
+    /// <summary>
+    /// A basic set of the data contains in StartOfFrame (SOF) segments 
+    /// </summary>
     public struct StartOfFrameData
     {
         public byte BitPerSample;
@@ -146,6 +180,9 @@ namespace JpgTagExtractor
         public string EncodingProcess;
     }
 
+    /// <summary>
+    /// Possible Exif orientation values for an image
+    /// </summary>
     public enum OrientationType : ushort
     {
         Horizontal,
@@ -158,6 +195,9 @@ namespace JpgTagExtractor
         Rotated270Clockwise
     }
 
+    /// <summary>
+    /// Different exposure modes a camera could have been using when reading the ExposureProgram exif entry
+    /// </summary>
     public enum ExposureProgram : byte
     {
         NotDefined,
@@ -172,7 +212,7 @@ namespace JpgTagExtractor
     }
 
     /// <summary>
-    /// Just a few common exif tags
+    /// Just a few exif tags
     /// </summary>
     /// <remarks>
     /// You can find more tags here: https://exiftool.org/TagNames/EXIF.html
@@ -193,6 +233,8 @@ namespace JpgTagExtractor
         public const ushort LensModel = 0xA434;
         public const ushort OriginalCreateDate = 0x9003;
         public const ushort ModifyDate = 0x0132;
+        public const ushort Copyright = 0x8298;
+        public const ushort Artist = 0x013B;
     }
 
     /// <summary>
@@ -533,7 +575,7 @@ namespace JpgTagExtractor
     /// <summary>
     /// Class that can extract Exif Version 2.0 tags from Jpg files
     /// </summary>
-    public static class Extractor
+    public static class JpgParser
     {
         // Segment types
         private const byte kJpgStartOfImage = 0xD8;
@@ -618,27 +660,27 @@ namespace JpgTagExtractor
         /* Cache controls */
 
         /// <summary>
-        /// A very simple fixed size cache of previously cached metadata. 
+        /// A very simple fixed size cache of previously processed objects.. 
         /// 
-        /// Stores metadata of last X files parsed, where the oldest entry is removed first.
+        /// Stores object of last X files parsed, where the oldest entry is removed first.
         /// </summary>
-        private static class ParsedMetadataCache
+        private class ObjectCache<T>
         {
             // This could actually be done using an OrderedDictionary but hey
-            private static Queue<string> _keys = new Queue<string>();
-            private static Dictionary<string, RawImageMetadata> _cache = new Dictionary<string, RawImageMetadata>();
+            private Queue<string> _keys = new Queue<string>();
+            private Dictionary<string, T> _cache = new Dictionary<string, T>();
 
-            private static int _maxCacheSize = 1;
+            private int _maxCacheSize = 1;
 
-            public static int Count => _cache.Count;
+            public int Count => _cache.Count;
 
-            public static void Clear()
+            public void Clear()
             {
                 _keys.Clear();
                 _cache.Clear();
             }
 
-            public static int Capacity {
+            public int Capacity {
                 get => _maxCacheSize;
                 set {
                     _maxCacheSize = value;
@@ -657,32 +699,35 @@ namespace JpgTagExtractor
                 }
             }
 
-            public static bool ContainsKey(string key)
+            public bool ContainsKey(string key)
             {
                 return _cache.ContainsKey(key);
             }
 
-            public static RawImageMetadata Retrieve(string key)
+            public T Retrieve(string key)
             {
                 if (_cache.ContainsKey(key))
                 {
                     return _cache[key];
                 }
 
-                return new RawImageMetadata();
+                return default(T);
             }
 
-            public static void Add(string key, RawImageMetadata rawMetadata)
+            public void Add(string key, T @object)
             {
                 if (_cache.Count == _maxCacheSize)
                 {
                     _cache.Remove(_keys.Dequeue());
                 }
 
-                _cache.Add(key, rawMetadata);
+                _cache.Add(key, @object);
                 _keys.Enqueue(key);
             }
         }
+
+        private static ObjectCache<RawImageMetadata> RawMetadataCache = new ObjectCache<RawImageMetadata>();
+        private static ObjectCache<ImageMetadata> ImageMetadataCache = new ObjectCache<ImageMetadata>();
 
         /// <summary>
         /// Wether of not to use the extractor's internal cache of previously parsed metadata. This cache stores sets metadata for each file that has been successfully parsed.
@@ -696,7 +741,7 @@ namespace JpgTagExtractor
         /// </summary>
         /// <seealso cref="UseInternalCache"/>
         /// <seealso cref="SetCacheSize(int)"/>
-        public static void ClearCache() => ParsedMetadataCache.Clear();
+        public static void ClearCache() { RawMetadataCache.Clear(); ImageMetadataCache.Clear(); }
 
         /// <summary>
         /// Sets the extractor's cache size. The cache stores sets of metadata for all the files that it has successfully parsed. 
@@ -707,91 +752,25 @@ namespace JpgTagExtractor
         /// <param name="size">How much metadata to cache (one per sucessfully parsed file)</param>
         /// <seealso cref="UseInternalCache"/>
         /// <seealso cref="ClearCache"/>
-        public static int CacheSize { get => ParsedMetadataCache.Capacity; set => ParsedMetadataCache.Capacity = value; }
+        public static int CacheSize { get { return RawMetadataCache.Capacity; } set { RawMetadataCache.Capacity = value; ImageMetadataCache.Capacity = value; } }
 
 
         /* Metadata retrieval methods */
 
+        /// <summary>
+        /// Returns a set of simplified, immediately accessible metadata from a file.
+        /// </summary>
+        /// <remarks>
+        /// Use GetExifTag or GetRawMetadata for accessible to all metadata that we were able to parse from the file.
+        /// </remarks>
         public static ImageMetadata GetMetadata(string filePath)
         {
-            RawImageMetadata rawMetadata = RetrieveRawMetadata(filePath);
-
-            // Convert raw metadata into something a bit simpler
-            ImageMetadata simpleMetadata = new ImageMetadata();
-            simpleMetadata.Name = Path.GetFileName(filePath);
-
-            // First get fill out the values that we can only get from exif
-            // TODO: Try and get width here as well
-            if (rawMetadata.ExifImageEntries.Count != 0)
-            {
-                ExifEntry entry;
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.Software, out entry))
-                {
-                    simpleMetadata.Software = entry.GetValueAsString();
-                }
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.Make, out entry))
-                {
-                    simpleMetadata.CameraMake = entry.GetValueAsString();
-                }
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.Model, out entry))
-                {
-                    simpleMetadata.CameraModel = entry.GetValueAsString();
-                }
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.Orientation, out entry))
-                {
-                    simpleMetadata.Orientation = (OrientationType)entry.GetValueAsUShort();
-                }
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.ISO, out entry))
-                {
-                    simpleMetadata.ISO = entry.GetValueAsUShort();
-                }
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.ExposureTime, out entry))
-                {
-                    simpleMetadata.ExposureTime = entry.GetValueAsURational();
-                }
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.ApertureValue, out entry))
-                {
-                    // TODO: Convert from apex
-                    //simpleMetadata.Aperture = entry.GetValueAsURational()
-                }
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.MaxAperture, out entry))
-                {
-                    // TODO: Convert from apex
-                    //simpleMetadata.MaxApeture = entry.()
-                }
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.FocalLengthIn35mmFormat, out entry))
-                {
-                    simpleMetadata.FocalLength = entry.GetValueAsUShort();
-                }
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.ExposureProgram, out entry))
-                {
-                    simpleMetadata.ExposureProgram = (ExposureProgram)entry.GetValueAsUShort();
-                }
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.LensModel, out entry))
-                {
-                    simpleMetadata.Lens = entry.GetValueAsString();
-                }
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.OriginalCreateDate, out entry))
-                {
-                    simpleMetadata.CreatedDate = entry.GetValueAsString();
-                }
-                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.ModifyDate, out entry))
-                {
-                    simpleMetadata.ModifiedDate = entry.GetValueAsString();
-                }
-            }
-
-            // Next try and get some values from the SOF segment, this has the best basic image data
-            simpleMetadata.Width = rawMetadata.FrameData.Width;
-            simpleMetadata.Height = rawMetadata.FrameData.Height;
-            simpleMetadata.BitsPerSample = rawMetadata.FrameData.BitPerSample;
-            simpleMetadata.Encoding = rawMetadata.FrameData.EncodingProcess;
-            simpleMetadata.ColorComponents = rawMetadata.FrameData.ColorComponents;
-            simpleMetadata.IsColor = rawMetadata.FrameData.IsColor;
-
-            return simpleMetadata;
+            return RetieveImageMetadata(filePath);
         }
 
+        /// <summary>
+        /// Retrieves a set of raw (sometimes unparsed) metadata found within a jpg file.
+        /// </summary>
         public static RawImageMetadata GetRawMetadata(string filePath)
         {
             return RetrieveRawMetadata(filePath);
@@ -895,21 +874,120 @@ namespace JpgTagExtractor
         private static RawImageMetadata RetrieveRawMetadata(string filePath)
         {
             // Check cache first
-            if (UseInternalCache && CacheSize != 0 && ParsedMetadataCache.ContainsKey(filePath))
+            if (UseInternalCache && CacheSize != 0 && RawMetadataCache.ContainsKey(filePath))
             {
-                return ParsedMetadataCache.Retrieve(filePath);
+                return RawMetadataCache.Retrieve(filePath);
             }
 
             RawImageMetadata rawImageMetadata = ParseJpgFile(filePath);
             if (UseInternalCache && CacheSize != 0)
             {
                 // Cache for later
-                ParsedMetadataCache.Add(filePath, rawImageMetadata);
+                RawMetadataCache.Add(filePath, rawImageMetadata);
             }
 
             return rawImageMetadata;
         }
 
+        /// <summary>
+        /// Creates an ImageMetadata object from the RawImageMetadata of the image, or retrieve a previously created version.
+        /// </summary>
+        private static ImageMetadata RetieveImageMetadata(string filePath)
+        {
+            // Try and retrieve it from the cache
+            if (UseInternalCache && CacheSize != 0 && ImageMetadataCache.ContainsKey(filePath))
+            {
+                return ImageMetadataCache.Retrieve(filePath);
+            }
+
+            // Alright we have to create it from the RawImageMetadata
+            RawImageMetadata rawMetadata = RetrieveRawMetadata(filePath);
+            ImageMetadata imageMetadata = new ImageMetadata();
+            imageMetadata.Name = Path.GetFileName(filePath);
+
+            // First get fill out the values that we can only get from exif
+            // TODO: Try and get width here as well
+            if (rawMetadata.ExifImageEntries.Count != 0)
+            {
+                ExifEntry entry;
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.Software, out entry))
+                {
+                    imageMetadata.Software = entry.GetValueAsString();
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.Make, out entry))
+                {
+                    imageMetadata.CameraMake = entry.GetValueAsString();
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.Model, out entry))
+                {
+                    imageMetadata.CameraModel = entry.GetValueAsString();
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.Orientation, out entry))
+                {
+                    imageMetadata.Orientation = (OrientationType)entry.GetValueAsUShort();
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.ISO, out entry))
+                {
+                    imageMetadata.ISO = entry.GetValueAsUShort();
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.ExposureTime, out entry))
+                {
+                    imageMetadata.ExposureTime = entry.GetValueAsURational();
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.ApertureValue, out entry))
+                {
+                    imageMetadata.Aperture = ApexConverter.ApexToDouble(entry.GetValueAsURational().ToDouble()) * 0.5;
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.MaxAperture, out entry))
+                {
+                    imageMetadata.MaxAperture = ApexConverter.ApexToDouble(entry.GetValueAsURational().ToDouble()) * 0.5;
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.FocalLengthIn35mmFormat, out entry))
+                {
+                    imageMetadata.FocalLength = entry.GetValueAsUShort();
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.ExposureProgram, out entry))
+                {
+                    imageMetadata.ExposureProgram = (ExposureProgram)entry.GetValueAsUShort();
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.LensModel, out entry))
+                {
+                    imageMetadata.Lens = entry.GetValueAsString();
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.OriginalCreateDate, out entry))
+                {
+                    imageMetadata.CreatedDate = entry.GetValueAsString();
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.ModifyDate, out entry))
+                {
+                    imageMetadata.ModifiedDate = entry.GetValueAsString();
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.Artist, out entry))
+                {
+                    imageMetadata.Artist = entry.GetValueAsString();
+                }
+                if (rawMetadata.ExifImageEntries.TryGetValue(ExifTags.Copyright, out entry))
+                {
+                    imageMetadata.Copyright = entry.GetValueAsString();
+                }
+            }
+
+            // Next try and get some values from the SOF segment, this has the best basic image data
+            imageMetadata.Width = rawMetadata.FrameData.Width;
+            imageMetadata.Height = rawMetadata.FrameData.Height;
+            imageMetadata.BitsPerSample = rawMetadata.FrameData.BitPerSample;
+            imageMetadata.Encoding = rawMetadata.FrameData.EncodingProcess;
+            imageMetadata.ColorComponents = rawMetadata.FrameData.ColorComponents;
+            imageMetadata.IsColor = rawMetadata.FrameData.IsColor;
+
+            if (UseInternalCache && CacheSize != 0)
+            {
+                // Cache for later
+                ImageMetadataCache.Add(filePath, imageMetadata);
+            }
+
+            return imageMetadata;
+        }
 
         /* Internal parsing code */
 
