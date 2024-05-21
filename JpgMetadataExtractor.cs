@@ -71,7 +71,7 @@ namespace JpgMetadataExtractor
         public ExposureProgram ExposureProgram;
         public string Lens = string.Empty;
 
-        public override string ToString() 
+        public override string ToString()
         {
             return string.Format(
                 "Name: {0}\n" +
@@ -660,9 +660,7 @@ namespace JpgMetadataExtractor
         /* Cache controls */
 
         /// <summary>
-        /// A very simple fixed size cache of previously processed objects.. 
-        /// 
-        /// Stores object of last X files parsed, where the oldest entry is removed first.
+        /// A fixed size cache of previously processed objects..
         /// </summary>
         private class ObjectCache<T>
         {
@@ -760,6 +758,12 @@ namespace JpgMetadataExtractor
         /// <summary>
         /// Returns a set of simplified, immediately accessible metadata from a file.
         /// </summary>
+        /// <exception cref="ObjectDisposedException">Thrown if an object used during parsing is null. (whoops)</exception>
+        /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
+        /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
+        /// <exception cref="JpgParsingException">Thrown when an error occurs while navigating the Jpg's structure</exception>
+        /// <exception cref="JfifParsingException">Thrown if an error occurs while trying to pass the Jpg Jfif segmenet</exception>
+        /// <exception cref="ExifParsingException">Thrown if an error occurs while parsing the Jpg Exif data</exception>
         /// <remarks>
         /// Use GetExifTag or GetRawMetadata for accessible to all metadata that we were able to parse from the file.
         /// </remarks>
@@ -771,6 +775,12 @@ namespace JpgMetadataExtractor
         /// <summary>
         /// Retrieves a set of raw (sometimes unparsed) metadata found within a jpg file.
         /// </summary>
+        /// <exception cref="ObjectDisposedException">Thrown if an object used during parsing is null. (whoops)</exception>
+        /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
+        /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
+        /// <exception cref="JpgParsingException">Thrown when an error occurs while navigating the Jpg's structure</exception>
+        /// <exception cref="JfifParsingException">Thrown if an error occurs while trying to pass the Jpg Jfif segmenet</exception>
+        /// <exception cref="ExifParsingException">Thrown if an error occurs while parsing the Jpg Exif data</exception>
         public static RawImageMetadata GetRawMetadata(string filePath)
         {
             return RetrieveRawMetadata(filePath);
@@ -785,6 +795,9 @@ namespace JpgMetadataExtractor
         /// <exception cref="ObjectDisposedException">Thrown if an object used during parsing is null. (whoops)</exception>
         /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
         /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
+        /// <exception cref="JpgParsingException">Thrown when an error occurs while navigating the Jpg's structure</exception>
+        /// <exception cref="JfifParsingException">Thrown if an error occurs while trying to pass the Jpg Jfif segmenet</exception>
+        /// <exception cref="ExifParsingException">Thrown if an error occurs while parsing the Jpg Exif data</exception>
         /// <remarks>
         /// The Exif entries for a file can be cached once the file is parsed, this is done to make retrieving entries quick. You can set the cache size, reset it's contents or disable it completely 
         /// via CacheSize, ResetCache and UseInternalCache respectively.
@@ -807,6 +820,9 @@ namespace JpgMetadataExtractor
         /// <exception cref="ObjectDisposedException">Thrown if an object used during parsing is null. (whoops)</exception>
         /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
         /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
+        /// <exception cref="JpgParsingException">Thrown when an error occurs while navigating the Jpg's structure</exception>
+        /// <exception cref="JfifParsingException">Thrown if an error occurs while trying to pass the Jpg Jfif segmenet</exception>
+        /// <exception cref="ExifParsingException">Thrown if an error occurs while parsing the Jpg Exif data</exception>
         /// <remarks>
         /// The Exif entries for a file can be cached once the file is parsed, this is done to make retrieving entries quick. You can set the cache size, reset it's contents or disable it completely 
         /// via CacheSize, ResetCache and UseInternalCache respectively.
@@ -832,6 +848,9 @@ namespace JpgMetadataExtractor
         /// <exception cref="ObjectDisposedException">Thrown if an object used during parsing is null. (whoops)</exception>
         /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
         /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
+        /// <exception cref="JpgParsingException">Thrown when an error occurs while navigating the Jpg's structure</exception>
+        /// <exception cref="JfifParsingException">Thrown if an error occurs while trying to pass the Jpg Jfif segmenet</exception>
+        /// <exception cref="ExifParsingException">Thrown if an error occurs while parsing the Jpg Exif data</exception>
         /// <remarks>
         /// The Exif entries for a file can be cached once the file is parsed, this is done to make retrieving entries quick. You can set the cache size, reset it's contents or disable it completely 
         /// via CacheSize, ResetCache and UseInternalCache respectively.
@@ -851,6 +870,9 @@ namespace JpgMetadataExtractor
         /// <exception cref="ObjectDisposedException">Thrown if an object used during parsing is null. (whoops)</exception>
         /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
         /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
+        /// <exception cref="JpgParsingException">Thrown when an error occurs while navigating the Jpg's structure</exception>
+        /// <exception cref="JfifParsingException">Thrown if an error occurs while trying to pass the Jpg Jfif segmenet</exception>
+        /// <exception cref="ExifParsingException">Thrown if an error occurs while parsing the Jpg Exif data</exception>
         /// <remarks>
         /// The Exif entries for a file can be cached once the file is parsed, this is done to make retrieving entries quick. You can set the cache size, reset it's contents or disable it completely 
         /// via CacheSize, ResetCache and UseInternalCache respectively.
@@ -989,6 +1011,7 @@ namespace JpgMetadataExtractor
             return imageMetadata;
         }
 
+
         /* Internal parsing code */
 
         /// <summary>
@@ -1007,7 +1030,7 @@ namespace JpgMetadataExtractor
 
             // Verify jpeg file, should always start with StartOfImage segment
             byte[] segment = reader.ReadBytes(2);
-            if (segment[0] != 0xFF || segment[1] != kJpgStartOfImage) // TODO: Ew
+            if (segment[0] != 0xFF || segment[1] != kJpgStartOfImage)
             {
                 throw new JpgParsingException($"Encountered incorrect starting segment, expected StartOfImage segment (0xFF 0xD8) instead found segment ({segment[0]} {segment[1]})");
             }
@@ -1038,7 +1061,7 @@ namespace JpgMetadataExtractor
                 // Determine the size of the segment
                 if (type != kJpgStartOfScan && type != kJpgEndOfImage)
                 {
-                    size = BitConverter.ToUInt16(reader.ReadBytes(2).Reverse().ToArray(), 0);
+                    size = reader.ReadUInt16(true);
                 }
                 else
                 {
@@ -1052,24 +1075,24 @@ namespace JpgMetadataExtractor
                 switch (type)
                 {
                     case kJpgDefineRestartInterval:
-                    {
-                        // This alerts future parsing code that we need to watch out for restart markers
-                        _restartMarkersPresent = true; 
-                        break;
-                    }
-
-                    case kJpgExifAppData:
-                    {
-                        // Multiple different things use this segmenet
-                        string segmentSignature = Encoding.ASCII.GetString(reader.PeakBytes(4));
-                        switch (segmentSignature)
                         {
-                            case kExifAppIdentifier: ProcessExifSegment(reader, reader.BaseStream.Position, metadata); break;
-                            case kAdobeXmpAppIdentifier: ProcessAdobeXmpSegment(reader, size, metadata); break;
+                            // This alerts future parsing code that we need to watch out for restart markers
+                            _restartMarkersPresent = true;
+                            break;
                         }
 
-                        break;
-                    }
+                    case kJpgExifAppData:
+                        {
+                            // Multiple different things use this segmenet
+                            string segmentSignature = Encoding.ASCII.GetString(reader.PeakBytes(4));
+                            switch (segmentSignature)
+                            {
+                                case kExifAppIdentifier: ProcessExifSegment(reader, reader.BaseStream.Position, metadata); break;
+                                case kAdobeXmpAppIdentifier: ProcessAdobeXmpSegment(reader, size, metadata); break;
+                            }
+
+                            break;
+                        }
 
                     case kJpgStartOfFrame0:
                     case kJpgStartOfFrame1:
@@ -1084,31 +1107,31 @@ namespace JpgMetadataExtractor
                     case kJpgStartOfFrame13:
                     case kJpgStartOfFrame14:
                     case kJpgStartOfFrame15:
-                    {
-                        ProcessStartOfFrameSegment(reader, size, type, metadata);
-                        break;
-                    }
-                        
+                        {
+                            ProcessStartOfFrameSegment(reader, size, type, metadata);
+                            break;
+                        }
+
                     case kJpgJfifAppData:
-                    {
-                        ProcessJfifSegment(reader, size, metadata);
-                        break;
-                    }
+                        {
+                            ProcessJfifSegment(reader, size, metadata);
+                            break;
+                        }
 
                     case kJpgStartOfScan:
-                    {
-                        if (ParseImageData)
                         {
-                            ProcessStartOfScanSegement(reader);
+                            if (ParseImageData)
+                            {
+                                ProcessStartOfScanSegement(reader);
+                            }
+                            else
+                            {
+                                // We basically bail once we hit image data. Parsing it does no benefit and it
+                                // is normally at the end of the file so there is no more juicy metadata to read after it.
+                                parsing = false;
+                            }
+                            break;
                         }
-                        else
-                        {
-                            // We basically bail once we hit image data. Parsing it does no benefit and it
-                            // is normally at the end of the file so there is no more juicy metadata to read after it.
-                            parsing = false;
-                        }
-                        break;
-                    }
                 }
 
                 // Jump over the segment after we have processed it
@@ -1133,8 +1156,6 @@ namespace JpgMetadataExtractor
         /// Exif data is stored in a Tiff structure. Entries referencing the data (it's position, type and length) are parsed first. Those are then resolved and the 
         /// Exif data is returned.
         /// </summary>
-        /// <param name="reader">Our file reader</param>
-        /// <param name="offset">Offset of the segement data within readers BaseStream</param>
         private static void ProcessExifSegment(BinaryReader reader, long segmentOffset, RawImageMetadata outMetadata)
         {
             // Sanity check
@@ -1163,24 +1184,23 @@ namespace JpgMetadataExtractor
             {
                 throw new ExifParsingException("Tiff byte alignment test failed");
             }
-            // TODO: Why do we not need to reverse? Is it because we are already setup to read little endian in the BinaryReader?
-            bool reverseOrder = false;// byteAlignment == kTiffMotorolaAligned;
-            uint firstIfdOffset = reader.ReadUInt32();
+            bool reverseOrder = byteAlignment == kTiffMotorolaAligned;
+            uint firstIfdOffset = reader.ReadUInt32(reverseOrder);
 
             // Parse tiff image file directory (IFD) structure
             uint ParseImageFileDirectory(long ifdOffset, ref List<TiffEntry> outEntries)
             {
                 reader.BaseStream.Seek(tiffOffset + ifdOffset, SeekOrigin.Begin);
-                ushort entries = reader.ReadUInt16();
+                ushort entries = reader.ReadUInt16(reverseOrder);
                 LogMessage("EXIF|TIFF", "IFD: loc={1} count={0}", entries, ifdOffset.ToString("x8"));
 
                 for (int i = 0; i < entries; i++)
                 {
                     TiffEntry entry = new TiffEntry();
-                    entry.Tag = reader.ReadUInt16();
-                    entry.Type = reader.ReadUInt16();
-                    entry.Count = reader.ReadUInt32();
-                    entry.ValueOffset = reader.ReadUInt32();
+                    entry.Tag = reader.ReadUInt16(reverseOrder);
+                    entry.Type = reader.ReadUInt16(reverseOrder);
+                    entry.Count = reader.ReadUInt32(reverseOrder);
+                    entry.ValueOffset = reader.ReadUInt32(reverseOrder);
                     LogMessage("EXIF|TIFF", "Entry: tag=0x{0} type={1} count={2} value_offset={3}", entry.Tag.ToString("X4"), entry.Type, entry.Count, entry.ValueOffset.ToString("X8"));
 
                     outEntries.Add(entry);
@@ -1196,7 +1216,7 @@ namespace JpgMetadataExtractor
                 }
 
                 // Return offset to next IFD
-                return reader.ReadUInt32();
+                return reader.ReadUInt32(reverseOrder);
             }
 
             // Exif only uses 2 image directories (and one exif sub directory) so we can unroll any loop that we would
@@ -1294,8 +1314,8 @@ namespace JpgMetadataExtractor
                 float version = reader.ReadByte();
                 version += reader.ReadByte() / 100; // This is fine?
                 JfifDensityUnits density = (JfifDensityUnits)reader.ReadByte();
-                ushort densityX = reader.ReadUInt16();
-                ushort densityY = reader.ReadUInt16();
+                ushort densityX = reader.ReadUInt16(true);
+                ushort densityY = reader.ReadUInt16(true);
 
                 LogMessage("JFIF", "Parsed JFIF data: Version={0} DensityUnits={1} DensityX={2} DensityY={3}", version, density, densityX, densityY);
             }
@@ -1318,8 +1338,8 @@ namespace JpgMetadataExtractor
             }
 
             metadata.FrameData.BitPerSample = reader.ReadByte();
-            metadata.FrameData.Height = reader.ReadUInt16();
-            metadata.FrameData.Width = reader.ReadUInt16();
+            metadata.FrameData.Height = reader.ReadUInt16(true);
+            metadata.FrameData.Width = reader.ReadUInt16(true);
             metadata.FrameData.ColorComponents = reader.ReadByte();
             metadata.FrameData.IsColor = metadata.FrameData.ColorComponents == 3;
 
@@ -1330,7 +1350,7 @@ namespace JpgMetadataExtractor
             }
             metadata.FrameData.EncodingProcess = encoding;
 
-            LogMessage("SOF", "StartOfFrame data: BitsPerSample={0} Height={1} Width={2} ColorComponent={3} Encoding=\"{4}\"", 
+            LogMessage("SOF", "StartOfFrame data: BitsPerSample={0} Height={1} Width={2} ColorComponent={3} Encoding=\"{4}\"",
                 metadata.FrameData.BitPerSample,
                 metadata.FrameData.Height,
                 metadata.FrameData.Width,
@@ -1393,7 +1413,7 @@ namespace JpgMetadataExtractor
         /// <returns>If the marker type is a return marker</returns>
         private static bool IsRestartMarker(ushort marker)
         {
-            return _restartMarkersPresent 
+            return _restartMarkersPresent
                 && marker == 0xD0
                 || marker == 0XD1
                 || marker == 0XD2
@@ -1482,6 +1502,35 @@ namespace JpgMetadataExtractor
             reader.BaseStream.Position = origin;
 
             return next;
+        }
+
+        /// <summary>
+        /// Reads the next bytes in the BinaryReader as a uint, reversing the byte order if specified
+        /// </summary>
+        public static uint ReadUInt32(this BinaryReader reader, bool reverseOrder)
+        {
+            uint value = reader.ReadUInt32();
+            if (reverseOrder)
+            {
+                value = (value & 0x000000FFU) << 24 |
+                        (value & 0x0000FF00U) << 8 |
+                        (value & 0x00FF0000U) >> 8 |
+                        (value & 0xFF000000U) >> 24;
+            }
+            return value;
+        }
+
+        /// <summary>
+        /// Reads the next bytes in the BinaryReader as a ushort, reversing the byte order if specified
+        /// </summary>
+        public static ushort ReadUInt16(this BinaryReader reader, bool reverseOrder)
+        {
+            ushort value = reader.ReadUInt16();
+            if (reverseOrder)
+            {
+                value = (ushort)((value & 0x00FFU) << 8 | (value & 0x0FF00U) >> 8);
+            }
+            return value;
         }
     }
 
