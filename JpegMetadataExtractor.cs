@@ -234,6 +234,9 @@ namespace JpegMetadataExtractor
         public const ushort ModifyDate = 0x0132;
         public const ushort Copyright = 0x8298;
         public const ushort Artist = 0x013B;
+        public const ushort Compression = 0x0103;
+        public const ushort ThumbnailLocation = 0x0201;
+        public const ushort ThumbnailLength = 0x0202;
     }
 
     /// <summary>
@@ -873,7 +876,7 @@ namespace JpegMetadataExtractor
         /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
         /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
         /// <exception cref="JpegParsingException">Thrown when an error occurs while navigating the Jpeg's structure</exception>
-        /// <exception cref="JfifParsingException">Thrown if an error occurs while trying to pass the Jpeg Jfif segmenet</exception>
+        /// <exception cref="JfifParsingException">Thrown if an error occurs while trying to pass the Jpeg Jfif segment</exception>
         /// <exception cref="ExifParsingException">Thrown if an error occurs while parsing the Jpeg Exif data</exception>
         /// <remarks>
         /// The Exif entries for a file can be cached once the file is parsed, this is done to make retrieving entries quick. You can set the cache size, reset it's contents or disable it completely 
@@ -886,10 +889,39 @@ namespace JpegMetadataExtractor
             return exif;
         }
 
-        // TODO
-        private static bool TryGetThumbnail(string filePath, out byte[] imageData)
+        /// <summary>
+        /// Attempt to retrieve the thumbnail image data embedded in a given Jpeg. 
+        /// </summary>
+        /// <param name="filePath">The path to the Jpeg file</param>
+        /// <param name="thumbnailImageData">The array to copy the found thumbnail image data into</param>
+        /// <exception cref="ObjectDisposedException">Thrown if an object used during parsing is null. (whoops)</exception>
+        /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
+        /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
+        /// <exception cref="JpegParsingException">Thrown when an error occurs while navigating the Jpeg's structure</exception>
+        /// <exception cref="JfifParsingException">Thrown if an error occurs while trying to pass the Jpeg Jfif segment</exception>
+        /// <exception cref="ExifParsingException">Thrown if an error occurs while parsing the Jpeg Exif data</exception>
+        /// <returns>returns whether any thumbnail was found</returns>
+        public static bool TryGetThumbnailData(string filePath, out byte[] thumbnailImageData)
         {
-            throw new NotSupportedException();
+            thumbnailImageData = GetThumbnailData(filePath);
+            return thumbnailImageData.Length != 0;
+        }
+
+        /// <summary>
+        /// Extracts the embedded thumbnail of a Jpeg file at a given path.
+        /// </summary>
+        /// <param name="filePath">The path to the Jpeg file</param>
+        /// <exception cref="ObjectDisposedException">Thrown if an object used during parsing is null. (whoops)</exception>
+        /// <exception cref="IOException">Thrown if an error occurs while trying to read from the file stream.</exception>
+        /// <exception cref="EndOfStreamException">Thrown if the end of the file is unexpectedly reached.</exception>
+        /// <exception cref="JpegParsingException">Thrown when an error occurs while navigating the Jpeg's structure</exception>
+        /// <exception cref="JfifParsingException">Thrown if an error occurs while trying to pass the Jpeg Jfif segment</exception>
+        /// <exception cref="ExifParsingException">Thrown if an error occurs while parsing the Jpeg Exif data</exception>
+        /// <returns>The raw thumbnail image data</returns>
+        public static byte[] GetThumbnailData(string filePath)
+        {
+            RawImageMetadata metadata = RetrieveRawMetadata(filePath);
+            return metadata.ThumbnailData;
         }
 
         /// <summary>
@@ -1123,7 +1155,7 @@ namespace JpegMetadataExtractor
                         {
                             if (ParseImageData)
                             {
-                                ProcessStartOfScanSegement(reader);
+                                ProcessStartOfScanSegment(reader);
                             }
                             else
                             {
@@ -1235,7 +1267,7 @@ namespace JpegMetadataExtractor
             {
                 // Look up and store the image exif data
                 Dictionary<ushort, ExifEntry> exifEntries = new Dictionary<ushort, ExifEntry>();
-                foreach (var tiffEntry in imageEntries)
+                foreach (var tiffEntry in entries)
                 {
                     int exifDataLength = (int)tiffEntry.Count * ExifEntry.TypeSizeMap[(ExifType)tiffEntry.Type];
 
@@ -1268,6 +1300,20 @@ namespace JpegMetadataExtractor
             // Resolve and store the exif entries 
             outMetadata.ExifImageEntries = ResolveTiffEntries(imageEntries);
             outMetadata.ExifThumbnailEntries = ResolveTiffEntries(thumbnailEntries);
+
+            // Whats this? I sniff an embedded preview thumbnail...
+            if (outMetadata.ExifThumbnailEntries.ContainsKey(ExifTags.ThumbnailLocation) &&
+                outMetadata.ExifThumbnailEntries.ContainsKey(ExifTags.ThumbnailLength))
+            {
+                long offset = outMetadata.ExifThumbnailEntries[ExifTags.ThumbnailLocation].GetValueAsULong();
+                long length = outMetadata.ExifThumbnailEntries[ExifTags.ThumbnailLength].GetValueAsULong();
+
+                outMetadata.ThumbnailData = new byte[length];
+                reader.BaseStream.Seek(tiffOffset + offset, SeekOrigin.Begin);
+                outMetadata.ThumbnailData = reader.ReadBytes((int)length);
+
+                LogMessage("EXIF", "Read thumbnail data [Len={0} Offset={1}] ", length, offset);
+            }
         }
 
         /// <summary>
@@ -1364,7 +1410,7 @@ namespace JpegMetadataExtractor
         /// markers. It will set the BinaryReader.BaseStream.Position to be just before the next segment marker.
         /// </summary>
         /// <param name="reader"></param>
-        private static void ProcessStartOfScanSegement(BinaryReader reader)
+        private static void ProcessStartOfScanSegment(BinaryReader reader)
         {
             if (reader == null || reader.BaseStream == null)
             {
