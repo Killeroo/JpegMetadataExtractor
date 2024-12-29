@@ -1286,18 +1286,13 @@ namespace JpegMetadataExtractor
 
                     exifEntries.Add(tiffEntry.Tag, new ExifEntry(tiffEntry.Tag, (ExifType)tiffEntry.Type, data));
 
-                    // LogMessage() already checks for LogMessages but the formatting of this log can be pretty expensive so
-                    // just don't do it if we aren't logging messages
-                    if (LogMessages)
-                    {
-                        LogMessage("EXIF", "Tag=0x{0} Type={1} Count={2} ValueOffset=0x{3}: [Len={4} Offset={5}] ",
-                            tiffEntry.Tag.ToString("X4"),
-                            (ExifType)tiffEntry.Type,
-                            tiffEntry.Count,
-                            tiffEntry.ValueOffset.ToString("X8"),
-                            exifDataLength,
-                            tiffEntry.Count <= 4 ? "-" : (segmentOffset + tiffEntry.ValueOffset).ToString());
-                    }
+                    LogMessage("EXIF", "Tag=0x{0} Type={1} Count={2} ValueOffset=0x{3}: [Len={4} Offset={5}] ",
+                        tiffEntry.Tag.ToString("X4"),
+                        (ExifType)tiffEntry.Type,
+                        tiffEntry.Count,
+                        tiffEntry.ValueOffset.ToString("X8"),
+                        exifDataLength,
+                        tiffEntry.Count <= 4 ? "-" : (segmentOffset + tiffEntry.ValueOffset).ToString());
                 }
                 return exifEntries;
             }
