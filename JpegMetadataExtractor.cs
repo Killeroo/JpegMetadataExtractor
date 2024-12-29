@@ -1118,7 +1118,7 @@ namespace JpegMetadataExtractor
                     case kJpegExifAppData:
                         {
                             // Multiple different things use this segment
-                            uint segmentSignature = BitConverter.ToUInt32(reader.PeakBytes(4));
+                            uint segmentSignature = BitConverter.ToUInt32(reader.PeakBytes(4), 0);
                             switch (segmentSignature)
                             {
                                 case kExifAppIdentifier: ProcessExifSegment(reader, reader.BaseStream.Position, metadata); break;
