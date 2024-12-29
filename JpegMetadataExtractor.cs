@@ -135,7 +135,7 @@ namespace JpegMetadataExtractor
         /// <summary>
         /// The raw AdobeXMP data found in the Jpeg file
         /// </summary>
-        public string AdobeXmpData = string.Empty;
+        public byte[] AdobeXmpData = new byte[0];
 
         /// <summary>
         /// A subset of the data found in the Jpeg's StartOfFrame segmenet
@@ -626,9 +626,9 @@ namespace JpegMetadataExtractor
             { kJpegStartOfFrame15, "Differential Lossless, Arithmetic coding" },
         };
 
-        // Identifiers for different data
-        private const string kExifAppIdentifier = "Exif";
-        private const string kAdobeXmpAppIdentifier = "http";
+        // Identifiers for different data that can live in the Exif data segment
+        private const uint kExifAppIdentifier = 0x66697845;
+        private const uint kAdobeXmpAppIdentifier = 0x70747468;
 
         // Tiff constants
         private const ushort kTiffIntelAligned = 0x4949;
@@ -1117,8 +1117,8 @@ namespace JpegMetadataExtractor
 
                     case kJpegExifAppData:
                         {
-                            // Multiple different things use this segmenet
-                            string segmentSignature = Encoding.ASCII.GetString(reader.PeakBytes(4));
+                            // Multiple different things use this segment
+                            uint segmentSignature = BitConverter.ToUInt32(reader.PeakBytes(4));
                             switch (segmentSignature)
                             {
                                 case kExifAppIdentifier: ProcessExifSegment(reader, reader.BaseStream.Position, metadata); break;
@@ -1286,13 +1286,18 @@ namespace JpegMetadataExtractor
 
                     exifEntries.Add(tiffEntry.Tag, new ExifEntry(tiffEntry.Tag, (ExifType)tiffEntry.Type, data));
 
-                    LogMessage("EXIF", "Tag=0x{0} Type={1} Count={2} ValueOffset=0x{3}: [Len={4} Offset={5}] ",
-                        tiffEntry.Tag.ToString("X4"),
-                        (ExifType)tiffEntry.Type,
-                        tiffEntry.Count,
-                        tiffEntry.ValueOffset.ToString("X8"),
-                        exifDataLength,
-                        tiffEntry.Count <= 4 ? "-" : (segmentOffset + tiffEntry.ValueOffset).ToString());
+                    // LogMessage() already checks for LogMessages but the formatting of this log can be pretty expensive so
+                    // just don't do it if we aren't logging messages
+                    if (LogMessages)
+                    {
+                        LogMessage("EXIF", "Tag=0x{0} Type={1} Count={2} ValueOffset=0x{3}: [Len={4} Offset={5}] ",
+                            tiffEntry.Tag.ToString("X4"),
+                            (ExifType)tiffEntry.Type,
+                            tiffEntry.Count,
+                            tiffEntry.ValueOffset.ToString("X8"),
+                            exifDataLength,
+                            tiffEntry.Count <= 4 ? "-" : (segmentOffset + tiffEntry.ValueOffset).ToString());
+                    }
                 }
                 return exifEntries;
             }
@@ -1330,9 +1335,9 @@ namespace JpegMetadataExtractor
             }
 
             // Copy the Adobe XMP chunk and save it for later
-            outMetadata.AdobeXmpData = Encoding.ASCII.GetString(reader.ReadBytes(size));
+            outMetadata.AdobeXmpData = reader.ReadBytes(size);
 
-            LogMessage("XMP", "Dumping contents:\n{0}", outMetadata.AdobeXmpData);
+            LogMessage("XMP", "Extracted XMP contents");
         }
 
         /// <summary>
