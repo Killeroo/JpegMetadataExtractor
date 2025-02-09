@@ -3,11 +3,11 @@
 A small C# library for extracting metadata from JPEG images.
 
 ## What does it do?
-- Parse files within milliseconds.
+- Easily and quickly extract thumbnail data and other basic image details.
+- Parses and extracts data from image files in milliseconds.
 - Almost non existent memory footprint.
 - Retrieve and decode [Exif metadata](https://en.wikipedia.org/wiki/Exif).
 - Extract raw [Adobe XMP](https://en.wikipedia.org/wiki/Extensible_Metadata_Platform) and [JFIF](https://en.wikipedia.org/wiki/JPEG_File_Interchange_Format) data.
-- Load embedded thumbnail and other basic image details.
 
 ## Remarks
 The Jpeg file format is over 30 years old, it has a lot of skeletons in it's closet and there will be files that this library struggles to read. I have done my best to battleharden this library and will continue to update it as I see fit but if you do encounter anything that is struggles to parse please [open an issue](https://github.com/Killeroo/JpegMetadataExtractor/issues) and share the image if at all possible.
@@ -40,6 +40,25 @@ This will return a class, `RawImageMetadata`, this contains:
 - The raw JFIF data (if it was found in the file)
 - The raw Adobe XMP data (if it was found in the file)
 - Basic image data information found in the `StartOfFrame` segment.
+
+### Embedded thumbnail extraction
+It's trivial to extract the thumbnail image embedded in most Jpegs: 
+```csharp
+byte[] thumbnailData = JpegParser.GetThumbnailData(imagePath);
+```
+From here it can either be saved directly to a file and opened. Or it can be converted to something more convienient like C#'s `Image` class to be processed or used further:
+```
+byte[] thumbnailData = JpegParser.GetThumbnailData(imagePath);
+if (thumbnailData.Length != 0)
+{
+    using (MemoryStream stream = new MemoryStream(thumbnailData))
+    {
+        return Image.FromStream(stream);
+    }
+}
+```
+Bear in mind that not all Jpegs have an embedded thumbnail image. In cases like this, the `GetThumbnailData()` will return an empty array.
+
 
 ### Exif specific functionality
 The library was primarily intended to extract and decode Exif data so the libaray includes a few methods for doing just that.
