@@ -1059,7 +1059,7 @@ namespace JpegMetadataExtractor
             RawImageMetadata metadata = new RawImageMetadata();
 
             // Open file 
-            FileStream stream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+            FileStream stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
             BinaryReader reader = new BinaryReader(stream);
 
             // Verify jpeg file, should always start with StartOfImage segment
